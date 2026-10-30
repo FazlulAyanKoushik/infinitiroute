@@ -1,0 +1,70 @@
+/**
+ * OpenClaw Integration — Dynamic provider.order based on Auto-Combo scores.
+ *
+ * GET /api/cli-tools/openclaw/auto-order
+ */
+
+import { NextResponse } from "next/server";
+import { resolveInfinitiRouteBaseUrl } from "@/shared/utils/resolveInfinitiRouteBaseUrl";
+
+const INFINITIROUTE_BASE_URL = resolveInfinitiRouteBaseUrl();
+
+export async function GET() {
+  try {
+    // Fetch current health and combos to determine best provider ordering
+    const [healthRes, combosRes] = await Promise.allSettled([
+      fetch(`${INFINITIROUTE_BASE_URL}/api/monitoring/health`, {
+        signal: AbortSignal.timeout(5000),
+      }),
+      fetch(`${INFINITIROUTE_BASE_URL}/api/combos`, { signal: AbortSignal.timeout(5000) }),
+    ]);
+
+    const health = healthRes.status === "fulfilled" ? await healthRes.value.json() : {};
+    const combos = combosRes.status === "fulfilled" ? await combosRes.value.json() : [];
+
+    // Build provider scores from circuit breaker state
+    const breakers: any[] = health?.circuitBreakers || [];
+    const providerScores = new Map<string, number>();
+
+    // Start all providers with base score
+    const allProviders = new Set<string>();
+    if (Array.isArray(combos)) {
+      for (const combo of combos) {
+        for (const model of combo.models || combo.data?.models || []) {
+          allProviders.add(model.provider);
+          providerScores.set(model.provider, (providerScores.get(model.provider) || 0) + 1);
+        }
+      }
+    }
+
+    // Adjust by circuit breaker state
+    for (const cb of breakers) {
+      const current = providerScores.get(cb.provider) || 0;
+      if (cb.state === "OPEN") providerScores.set(cb.provider, current * 0.1);
+      else if (cb.state === "HALF_OPEN") providerScores.set(cb.provider, current * 0.5);
+    }
+
+    // Sort by score descending
+    const ordered = [...providerScores.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([provider]) => provider);
+
+    return NextResponse.json({
+      provider: {
+        order: ordered,
+        allow_fallbacks: true,
+      },
+      generated_at: new Date().toISOString(),
+      source: "infinitiroute-auto-combo",
+    });
+  } catch {
+    return NextResponse.json({
+      provider: {
+        order: ["anthropic", "google", "openai"],
+        allow_fallbacks: true,
+      },
+      generated_at: new Date().toISOString(),
+      source: "infinitiroute-fallback",
+    });
+  }
+}
