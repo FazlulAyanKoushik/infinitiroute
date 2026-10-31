@@ -206,10 +206,11 @@ stop the container first before copying it directly.
 
 ## 9. Quick troubleshooting
 
-| Problem                                                 | Fix                                                                                                                      |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `Bind for ... failed: port is already allocated`        | Something else owns the port — `docker ps` to find it, or use a different host port                                      |
-| `The container name "/infinitiroute" is already in use` | `docker rm -f infinitiroute` then run again                                                                              |
-| Container restarts in a loop                            | `docker logs --tail 100 infinitiroute` and check for the failing step                                                    |
-| Dashboard unreachable but container healthy             | Check the `-p` port mapping matches the URL you are opening                                                              |
-| Forgot dashboard password                               | `docker exec -it infinitiroute node bin/reset-password.mjs` (or the `infinitiroute-reset-password` CLI inside the image) |
+| Problem                                                                        | Fix                                                                                                                                                                |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Bind for ... failed: port is already allocated`                               | Something else owns the port — `docker ps` to find it, or use a different host port                                                                                |
+| `The container name "/infinitiroute" is already in use`                        | `docker rm -f infinitiroute` then run again                                                                                                                        |
+| Container restarts in a loop                                                   | `docker logs --tail 100 infinitiroute` and check for the failing step                                                                                              |
+| Dashboard unreachable but container healthy                                    | Check the `-p` port mapping matches the URL you are opening                                                                                                        |
+| Forgot dashboard password                                                      | `docker exec -it infinitiroute node bin/reset-password.mjs` (or the `infinitiroute-reset-password` CLI inside the image)                                           |
+| Multi-line command fails (`invalid reference format`, `-v: command not found`) | The `\` line-continuations were lost in copy-paste. Use the one-command script instead: `./scripts/docker-update.sh 20129`, or paste the command as a single line. |
