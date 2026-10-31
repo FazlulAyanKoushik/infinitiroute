@@ -128,8 +128,19 @@ docker run -d \
 Same as §2 but on the already-freed port. The volume keeps all your data, so
 recreating the container is safe any time.
 
-Tip: save the `docker run` line as a script (`run.sh` / `run.ps1`) so updates
-are copy-paste.
+**One-command update:** use the bundled script from the repo root:
+
+```bash
+./scripts/docker-update.sh          # container on port 20128
+./scripts/docker-update.sh 20129    # or any host port you use
+```
+
+(Windows PowerShell: `bash scripts/docker-update.sh 20129` from Git Bash, or run
+the three commands from the block above manually.)
+
+> ⚠️ `docker restart infinitiroute` does **not** pick up code changes — the
+> container runs the code snapshot baked into the image at build time. Code
+> change → rebuild image → recreate container. Every time.
 
 ---
 
