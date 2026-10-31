@@ -63,6 +63,8 @@ docker run -d --name infinitiroute --restart unless-stopped --stop-timeout 40 \
 
 Dashboard: `http://localhost:20128`. The image builds for your current platform; use `docker buildx` with `--platform linux/amd64,linux/arm64` if you need multi-arch images for a registry.
 
+📖 **Everyday Docker operations** — stop/start, logs, switching the port, updating the image, backups, troubleshooting: see [DOCKER.md](DOCKER.md).
+
 ### Desktop app (Electron)
 
 ```bash
