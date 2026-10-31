@@ -52,13 +52,16 @@ npm install
 PORT=20128 DASHBOARD_PORT=20129 NEXT_PUBLIC_BASE_URL=http://localhost:20129 npm run dev
 ```
 
-### Docker (AMD64 + ARM64)
+### Docker (build locally — no image published yet)
 
 ```bash
+docker build -t infinitiroute:latest .
 docker run -d --name infinitiroute --restart unless-stopped --stop-timeout 40 \
   -p 20128:20128 -v infinitiroute-data:/app/data \
   infinitiroute:latest
 ```
+
+Dashboard: `http://localhost:20128`. The image builds for your current platform; use `docker buildx` with `--platform linux/amd64,linux/arm64` if you need multi-arch images for a registry.
 
 ### Desktop app (Electron)
 

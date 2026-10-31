@@ -18,8 +18,8 @@ WORKDIR /app
 
 LABEL org.opencontainers.image.title="infinitiroute" \
   org.opencontainers.image.description="Unified AI proxy — route any LLM through one endpoint" \
-  org.opencontainers.image.url="https://infinitiroute.online" \
-  org.opencontainers.image.source="https://github.com/diegosouzapw/InfinitiRoute" \
+  org.opencontainers.image.url="https://github.com/FazlulAyanKoushik/infinitiroute" \
+  org.opencontainers.image.source="https://github.com/FazlulAyanKoushik/infinitiroute" \
   org.opencontainers.image.licenses="MIT"
 
 ENV NODE_ENV=production
@@ -65,4 +65,9 @@ RUN apt-get update \
   && git config --system url."https://github.com/".insteadOf "ssh://git@github.com/"
 
 # Install CLI tools globally. Separate layer from apt for better cache reuse.
-RUN npm install -g --no-audit --no-fund @openai/codex @anthropic-ai/claude-code droid openclaw@latest
+# openclaw is installed separately: recent releases require Node >= 24, which is
+# above this image's runtime (Node 22). A failed openclaw install must not block
+# the other CLI tools — openclaw simply stays absent from the image.
+RUN npm install -g --no-audit --no-fund @openai/codex @anthropic-ai/claude-code droid \
+  && (npm install -g --no-audit --no-fund openclaw@latest \
+      || echo "[build] openclaw skipped: requires Node >= 24 (image runs Node 22)")
