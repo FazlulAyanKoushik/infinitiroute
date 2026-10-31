@@ -146,7 +146,16 @@ then move InfinitiRoute to 20128 per §6.
 
 ## 7. Update to a new build
 
-After pulling/changing code:
+After pulling/changing code, rebuild the image and recreate the container —
+**on the same host port InfinitiRoute already uses**. Check it first:
+
+```bash
+docker ps --filter name=infinitiroute --format "{{.Ports}}"
+# → 127.0.0.1:20129->20128/tcp   ← your host port is the LEFT number (20129)
+```
+
+Then rebuild + recreate on that port (this example uses **20129**, the
+side-by-side setup from §6b):
 
 ```bash
 docker build -t infinitiroute:latest .
@@ -155,19 +164,21 @@ docker run -d \
   --name infinitiroute \
   --restart unless-stopped \
   --stop-timeout 40 \
-  -p 127.0.0.1:20128:20128 \
+  -p 127.0.0.1:20129:20128 \
   -v infinitiroute-data:/app/data \
   infinitiroute:latest
 ```
 
-Same as §2 but on the already-freed port. The volume keeps all your data, so
-recreating the container is safe any time.
+> The `-p` mapping is `HOST_PORT:CONTAINER_PORT`. The container always listens
+> on 20128 internally; only the host port ever changes. If you retired
+> omniroute and moved InfinitiRoute to 20128 (§6), use `-p 127.0.0.1:20128:20128`
+> instead. The volume keeps all your data either way.
 
-**One-command update:** use the bundled script from the repo root:
+**One-command update** (takes the host port as the argument):
 
 ```bash
-./scripts/docker-update.sh          # container on port 20128
-./scripts/docker-update.sh 20129    # or any host port you use
+./scripts/docker-update.sh 20129    # your current side-by-side setup
+./scripts/docker-update.sh 20128    # after you move it to the default port (§6)
 ```
 
 (Windows PowerShell: `bash scripts/docker-update.sh 20129` from Git Bash, or run
