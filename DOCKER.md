@@ -109,6 +109,41 @@ Settings → export JSON → InfinitiRoute dashboard → Settings → import JSO
 
 ---
 
+## 6b. Running omniroute and InfinitiRoute side by side
+
+The two gateways never share a port. Keep omniroute on **20128** and
+InfinitiRoute on **20129** — both can run at the same time, each with its own
+data volume:
+
+| Gateway             | URL                      | Container       | Data volume          |
+| ------------------- | ------------------------ | --------------- | -------------------- |
+| omniroute (old)     | `http://127.0.0.1:20128` | `omniroute`     | `omniroute-data`     |
+| InfinitiRoute (new) | `http://127.0.0.1:20129` | `infinitiroute` | `infinitiroute-data` |
+
+To (re)start omniroute on 20128:
+
+```bash
+docker run -d --name omniroute --restart unless-stopped --stop-timeout 40 \
+  -p 127.0.0.1:20128:20128 -v omniroute-data:/app/data \
+  diegosouzapw/omniroute:latest
+```
+
+To (re)start InfinitiRoute on 20129:
+
+```bash
+./scripts/docker-update.sh 20129      # rebuild + recreate (after code changes)
+# or, without code changes:
+docker start infinitiroute
+```
+
+Point one CLI tool at `http://127.0.0.1:20128/v1` and another at
+`http://127.0.0.1:20129/v1` to compare them, or migrate at your own pace.
+When you stop using omniroute for good: `docker stop omniroute && docker rm omniroute`
+(keep the `omniroute-data` volume until you've exported anything you need),
+then move InfinitiRoute to 20128 per §6.
+
+---
+
 ## 7. Update to a new build
 
 After pulling/changing code:
