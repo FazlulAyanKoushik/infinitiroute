@@ -177,3 +177,109 @@ export function extractComboTestResponseText(responseBody: unknown): string {
 
   return "";
 }
+
+/**
+ * Send a minimal but real chat request for `modelStr` through the same
+ * internal /v1 pipeline an external OpenAI-compatible client would use.
+ *
+ * Used by combo health checks and provider per-model tests. The internal
+ * test header bypasses REQUIRE_API_KEY for authenticated dashboard callers,
+ * and the no-cache header forces a fresh execution path so tests can never
+ * be satisfied by the semantic cache or other request-reuse layers.
+ */
+export async function testModelViaPipeline(
+  modelStr: string,
+  internalUrl: string,
+  requestIdPrefix = "model-test"
+): Promise<{
+  model: string;
+  status: "ok" | "error";
+  statusCode?: number;
+  latencyMs: number;
+  error?: string;
+  responseText?: string;
+}> {
+  const startTime = Date.now();
+  try {
+    const testBody = buildComboTestRequestBody(modelStr);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+
+    let res: Response;
+    try {
+      res = await fetch(internalUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Test": "combo-health-check",
+          "X-InfinitiRoute-No-Cache": "true",
+          "X-Request-Id": `${requestIdPrefix}-${crypto.randomUUID()}`,
+        },
+        body: JSON.stringify(testBody),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const latencyMs = Date.now() - startTime;
+
+    if (res.ok) {
+      let responseBody: unknown = null;
+      try {
+        responseBody = await res.json();
+      } catch {
+        responseBody = null;
+      }
+
+      const responseText = extractComboTestResponseText(responseBody);
+      if (!responseText) {
+        return {
+          model: modelStr,
+          status: "error",
+          statusCode: res.status,
+          error: "Provider returned HTTP 200 but no text content.",
+          latencyMs,
+        };
+      }
+
+      return { model: modelStr, status: "ok", latencyMs, responseText };
+    }
+
+    let errorMsg = "";
+    try {
+      const errBody = await res.json();
+      errorMsg = errBody?.error?.message || errBody?.error || res.statusText;
+    } catch {
+      errorMsg = res.statusText;
+    }
+
+    return {
+      model: modelStr,
+      status: "error",
+      statusCode: res.status,
+      error: errorMsg,
+      latencyMs,
+    };
+  } catch (error) {
+    const latencyMs = Date.now() - startTime;
+    return {
+      model: modelStr,
+      status: "error",
+      error: error.name === "AbortError" ? "Timeout (20s)" : error.message,
+      latencyMs,
+    };
+  }
+}
+
+/**
+ * Get the base URL for internal requests (VPS-safe: respects reverse proxy headers)
+ */
+export function getBaseUrl(request: Request): string {
+  const fwdHost = request.headers.get("x-forwarded-host");
+  const fwdProto = request.headers.get("x-forwarded-proto") || "https";
+  if (fwdHost) return `${fwdProto}://${fwdHost}`;
+  const url = new URL(request.url);
+  return `${url.protocol}//${url.host}`;
+}

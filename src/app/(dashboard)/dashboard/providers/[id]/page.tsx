@@ -328,6 +328,12 @@ interface ModelRowProps {
   compatDisabled?: boolean;
   onToggleHidden?: (modelId: string, hidden: boolean) => Promise<void>;
   togglingHidden?: boolean;
+  onTestModel?: () => void;
+  modelTestState?: {
+    status: "testing" | "ok" | "error";
+    latencyMs?: number;
+    error?: string;
+  };
 }
 
 interface PassthroughModelRowProps {
@@ -883,6 +889,10 @@ export default function ProviderDetailPage() {
   const [retestingId, setRetestingId] = useState(null);
   const [batchTesting, setBatchTesting] = useState(false);
   const [batchTestResults, setBatchTestResults] = useState<any>(null);
+  const [modelTestStates, setModelTestStates] = useState<
+    Record<string, { status: "testing" | "ok" | "error"; latencyMs?: number; error?: string }>
+  >({});
+  const [testingAllModels, setTestingAllModels] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [headerImgError, setHeaderImgError] = useState(false);
   const { copied, copy } = useCopyToClipboard();
@@ -1383,6 +1393,68 @@ export default function ProviderDetailPage() {
     } finally {
       setRetestingId(null);
     }
+  };
+
+  // Per-model health test: sends a real minimal chat completion for the
+  // given model(s) through the /v1 pipeline and records ok/error + latency.
+  const runModelTests = async (modelIds: string[]) => {
+    const states: Record<string, { status: "testing" | "ok" | "error" }> = {};
+    for (const id of modelIds) states[id] = { status: "testing" };
+    setModelTestStates((prev) => ({ ...prev, ...states }));
+    try {
+      const res = await fetch(`/api/providers/${providerId}/test-models`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ models: modelIds.map((id) => `${providerDisplayAlias}/${id}`) }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.results) {
+        const message = data?.error?.message || data?.error || `HTTP ${res.status}`;
+        setModelTestStates((prev) => {
+          const next = { ...prev };
+          for (const id of modelIds) next[id] = { status: "error", error: String(message) };
+          return next;
+        });
+        return;
+      }
+      const byModel = new Map<string, any>();
+      for (const r of data.results as any[]) {
+        const bare = String(r.model || "").replace(`${providerDisplayAlias}/`, "");
+        byModel.set(bare, r);
+      }
+      setModelTestStates((prev) => {
+        const next = { ...prev };
+        for (const id of modelIds) {
+          const r = byModel.get(id);
+          if (!r) continue;
+          next[id] =
+            r.status === "ok"
+              ? { status: "ok", latencyMs: r.latencyMs }
+              : { status: "error", latencyMs: r.latencyMs, error: r.error };
+        }
+        return next;
+      });
+    } catch (error) {
+      setModelTestStates((prev) => {
+        const next = { ...prev };
+        for (const id of modelIds)
+          next[id] = { status: "error", error: error?.message || "Test request failed" };
+        return next;
+      });
+    }
+  };
+
+  const handleTestModel = (modelId: string) => {
+    if (modelTestStates[modelId]?.status === "testing" || testingAllModels) return;
+    runModelTests([modelId]);
+  };
+
+  const handleTestAllModels = () => {
+    if (testingAllModels) return;
+    const ids = models.filter((m) => !effectiveModelHidden(m.id)).map((m) => m.id);
+    if (ids.length === 0) return;
+    setTestingAllModels(true);
+    runModelTests(ids).finally(() => setTestingAllModels(false));
   };
 
   // Batch test all connections for this provider
@@ -2236,6 +2308,9 @@ export default function ProviderDetailPage() {
     const activeCount = modelsWithVisibility.filter((m) => !m.isHidden).length;
     const hiddenFilteredCount = filteredModels.filter((m) => m.isHidden).length;
     const visibleFilteredCount = filteredModels.length - hiddenFilteredCount;
+    const hasActiveConnection = connections.some((conn) => conn.isActive !== false);
+    const canTestModels =
+      hasActiveConnection && modelsWithVisibility.some((m) => !m.isHidden) && !testingAllModels;
     return (
       <div>
         {importButton}
@@ -2264,6 +2339,36 @@ export default function ProviderDetailPage() {
             deselectAllDisabled={visibleFilteredCount === 0 || bulkVisibilityAction !== null}
           />
         )}
+        {modelsWithVisibility.length > 0 && (
+          <div className="flex items-center gap-2 mb-3">
+            <button
+              onClick={handleTestAllModels}
+              disabled={!canTestModels}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-muted hover:bg-sidebar hover:text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={providerText(
+                t,
+                "testAllModelsHint",
+                "Send a real test request through every active model"
+              )}
+            >
+              <span className="material-symbols-outlined text-sm">
+                {testingAllModels ? "hourglass_top" : "science"}
+              </span>
+              {testingAllModels
+                ? providerText(t, "testingModels", "Testing models...")
+                : providerText(t, "testAllModels", "Test all models")}
+            </button>
+            {!hasActiveConnection && (
+              <span className="text-xs text-text-muted">
+                {providerText(
+                  t,
+                  "testModelsNeedsConnection",
+                  "Connect an account first to run model tests"
+                )}
+              </span>
+            )}
+          </div>
+        )}
         <div className="flex flex-wrap gap-3">
           {filteredModels.map((model) => {
             return (
@@ -2284,6 +2389,8 @@ export default function ProviderDetailPage() {
                   handleToggleModelHidden(providerId, modelId, hidden)
                 }
                 togglingHidden={togglingModelId === model.id}
+                onTestModel={hasActiveConnection ? () => handleTestModel(model.id) : undefined}
+                modelTestState={modelTestStates[model.id]}
               />
             );
           })}
@@ -3074,6 +3181,8 @@ function ModelRow({
   compatDisabled,
   onToggleHidden,
   togglingHidden,
+  onTestModel,
+  modelTestState,
 }: ModelRowProps) {
   const isHidden = Boolean(model.isHidden);
   return (
@@ -3101,8 +3210,46 @@ function ModelRow({
             {copied === `model-${model.id}` ? "check" : "content_copy"}
           </span>
         </button>
+        {modelTestState?.status === "ok" && (
+          <span
+            className="text-[11px] font-medium text-green-500"
+            title={providerText(t, "modelTestPassed", "Test passed")}
+          >
+            {modelTestState.latencyMs}ms
+          </span>
+        )}
+        {modelTestState?.status === "error" && (
+          <span
+            className="max-w-[220px] truncate text-[11px] font-medium text-red-500"
+            title={modelTestState.error}
+          >
+            {providerText(t, "modelTestFailed", "Failed")}: {modelTestState.error}
+          </span>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
+        {onTestModel && (
+          <button
+            onClick={onTestModel}
+            disabled={modelTestState?.status === "testing"}
+            className={`rounded p-0.5 hover:bg-sidebar disabled:opacity-40 disabled:cursor-not-allowed ${
+              modelTestState?.status === "ok"
+                ? "text-green-500"
+                : modelTestState?.status === "error"
+                  ? "text-red-500"
+                  : "text-text-muted hover:text-primary"
+            }`}
+            title={
+              modelTestState?.status === "testing"
+                ? providerText(t, "modelTesting", "Testing model...")
+                : providerText(t, "testModel", "Test model")
+            }
+          >
+            <span className="material-symbols-outlined text-sm">
+              {modelTestState?.status === "testing" ? "hourglass_top" : "science"}
+            </span>
+          </button>
+        )}
         {onToggleHidden && (
           <button
             onClick={() => onToggleHidden(model.id, !isHidden)}

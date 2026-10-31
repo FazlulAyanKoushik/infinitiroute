@@ -1104,6 +1104,14 @@ export const providersBatchTestSchema = z
     }
   });
 
+export const providerTestModelsSchema = z.object({
+  // Fully-prefixed model strings ("antigravity/claude-opus-4-6-thinking") as
+  // shown on the provider page. Each is sent as a real minimal chat
+  // completion through the /v1 pipeline. Cap the batch so a single dashboard
+  // click cannot hammer upstreams with hundreds of calls.
+  models: z.array(z.string().trim().min(1)).min(1).max(50),
+});
+
 export const validateProviderApiKeySchema = z.object({
   provider: z.string().trim().min(1, "Provider and API key required"),
   apiKey: z.string().trim().min(1, "Provider and API key required"),
